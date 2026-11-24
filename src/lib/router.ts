@@ -6,6 +6,9 @@ export const NEW_ROW = 'new'
 
 export const paths = {
   list: () => '/',
+  project: (id: string) => `/project/${encodeURIComponent(id)}`,
+  newProject: () => '/new-project',
+  editProject: (id: string) => `${paths.project(id)}/edit`,
   estimate: (id: string) => `/estimate/${encodeURIComponent(id)}`,
   row: (id: string, rowId: string | null) =>
     `${paths.estimate(id)}/row/${rowId === null ? NEW_ROW : encodeURIComponent(rowId)}`,

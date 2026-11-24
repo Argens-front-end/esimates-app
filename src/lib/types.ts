@@ -6,8 +6,18 @@ export interface EstimateRow {
   price: number
 }
 
+/** A construction site / object that groups estimates. */
+export interface Project {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Estimate {
   id: string
+  /** Every estimate belongs to a project. */
+  projectId: string
   title: string
   currency: string
   rows: EstimateRow[]

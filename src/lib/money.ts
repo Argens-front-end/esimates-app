@@ -57,3 +57,10 @@ export function formatShortDate(iso: string) {
     ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
   })
 }
+
+/** Sum of several estimates, grouped by currency (e.g. "1 200,00 $ + 300,00 €"). */
+export function formatTotals(estimates: Estimate[]) {
+  const byCurrency = new Map<string, number>()
+  for (const e of estimates) byCurrency.set(e.currency, round2((byCurrency.get(e.currency) ?? 0) + estimateTotal(e)))
+  return [...byCurrency].map(([currency, sum]) => formatMoney(sum, currency)).join(' + ')
+}

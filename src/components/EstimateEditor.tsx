@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Estimate } from '../lib/types'
+import type { Estimate, Project } from '../lib/types'
 import { CURRENCIES } from '../lib/types'
 import { currencyName, estimateTotal, formatMoney, formatNumber, plural, rowSum } from '../lib/money'
 import { useNavigate } from 'react-router'
@@ -15,12 +15,13 @@ import { ChevronLeft, ChevronRight, ChevronUpDown, Ellipsis, Plus, Share, Trash 
 
 interface Props {
   estimate: Estimate
+  projects: Project[]
   onChange: (estimate: Estimate) => void
   onDelete: (id: string) => void
   onDuplicate: (id: string) => Estimate | undefined
 }
 
-export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Props) {
+export function EstimateEditor({ estimate, projects, onChange, onDelete, onDuplicate }: Props) {
   const navigate = useNavigate()
   const [openSwipe, setOpenSwipe] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -41,6 +42,9 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
     }
   }
 
+  const project = projects.find((p) => p.id === estimate.projectId)
+  const parentPath = project ? paths.project(project.id) : paths.list()
+
   const currencies: string[] = (CURRENCIES as readonly string[]).includes(estimate.currency)
     ? [...CURRENCIES]
     : [estimate.currency, ...CURRENCIES]
@@ -50,9 +54,9 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
       <NavBar
         title={estimate.title || 'Без названия'}
         left={
-          <BarButton onClick={() => navigate(paths.list())}>
-            <ChevronLeft className="h-[17px] w-[10px]" />
-            Сметы
+          <BarButton onClick={() => navigate(parentPath)}>
+            <ChevronLeft className="h-[17px] w-[10px] shrink-0" />
+            <span className="max-w-[28vw] truncate sm:max-w-40">{project ? project.title || 'Объект' : 'Объекты'}</span>
           </BarButton>
         }
         right={
@@ -186,7 +190,7 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
             destructive: true,
             onSelect: () => {
               onDelete(estimate.id)
-              navigate(paths.list())
+              navigate(parentPath)
             },
           },
         ]}

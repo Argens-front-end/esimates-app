@@ -1,12 +1,17 @@
-import type { Estimate, EstimateRow } from './types'
+import type { Estimate, EstimateRow, Project } from './types'
 import { saveFile } from './saveFile'
 import { uid } from './storage'
 
 const FORMAT = 'smety-backup'
-const VERSION = 1
+const VERSION = 2
 
-export async function exportBackup(estimates: Estimate[]) {
-  const payload = { format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(), estimates }
+export interface BackupData {
+  projects: Project[]
+  estimates: Estimate[]
+}
+
+export async function exportBackup({ projects, estimates }: BackupData) {
+  const payload = { format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(), projects, estimates }
   const date = new Date().toISOString().slice(0, 10)
   await saveFile(
     new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
@@ -28,6 +33,8 @@ function normalizeEstimate(v: unknown): Estimate | null {
   const now = new Date().toISOString()
   return {
     id: v.id,
+    // Empty for v1 backups; storage moves such estimates into a fallback project on import.
+    projectId: str(v.projectId),
     title: str(v.title),
     currency: str(v.currency, 'USD'),
     rows: v.rows.map(normalizeRow).filter((r): r is EstimateRow => r !== null),
@@ -36,15 +43,31 @@ function normalizeEstimate(v: unknown): Estimate | null {
   }
 }
 
-/** Accepts both the backup envelope and a bare array of estimates. */
-export async function readBackup(file: File): Promise<Estimate[]> {
+function normalizeProject(v: unknown): Project | null {
+  if (!isObj(v) || typeof v.id !== 'string') return null
+  const now = new Date().toISOString()
+  return {
+    id: v.id,
+    title: str(v.title),
+    createdAt: str(v.createdAt, now),
+    updatedAt: str(v.updatedAt, now),
+  }
+}
+
+/** Accepts the backup envelope (v1 without projects or v2) and a bare array of estimates. */
+export async function readBackup(file: File): Promise<BackupData> {
   let data: unknown
   try {
     data = JSON.parse(await file.text())
   } catch {
     throw new Error('Файл повреждён или это не резервная копия смет.')
   }
-  const list = Array.isArray(data) ? data : isObj(data) && data.format === FORMAT ? data.estimates : null
+  const envelope = isObj(data) && data.format === FORMAT ? data : null
+  const list = Array.isArray(data) ? data : envelope?.estimates
   if (!Array.isArray(list)) throw new Error('Это не резервная копия смет.')
-  return list.map(normalizeEstimate).filter((e): e is Estimate => e !== null)
+  const projects = (Array.isArray(envelope?.projects) ? envelope.projects : [])
+    .map(normalizeProject)
+    .filter((p): p is Project => p !== null)
+  const estimates = list.map(normalizeEstimate).filter((e): e is Estimate => e !== null)
+  return { projects, estimates }
 }

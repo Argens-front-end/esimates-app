@@ -110,3 +110,16 @@ export const DocText = (p: IconProps) => (
     <path d="M29 5v9h9M17 24h14M17 30h14M17 36h8" />
   </svg>
 )
+
+export const Folder = (p: IconProps) => (
+  <svg viewBox="0 0 24 24" {...base({ strokeWidth: 1.8, ...p })}>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+  </svg>
+)
+
+export const FolderPlus = (p: IconProps) => (
+  <svg viewBox="0 0 24 24" {...base({ strokeWidth: 1.8, ...p })}>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+    <path d="M12 10v6M9 13h6" />
+  </svg>
+)
