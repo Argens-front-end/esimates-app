@@ -21,44 +21,6 @@ function useEscape(active: boolean, onClose: () => void) {
   }, [active, onClose])
 }
 
-interface SheetProps {
-  open: boolean
-  onClose: () => void
-  title: ReactNode
-  left?: ReactNode
-  right?: ReactNode
-  children: ReactNode
-}
-
-/** iOS "page sheet": slides up from the bottom and nearly fills the screen. */
-export function Sheet({ open, onClose, title, left, right, children }: SheetProps) {
-  useLockBodyScroll(open)
-  useEscape(open, onClose)
-  if (!open) return null
-
-  return createPortal(
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 animate-fade-in bg-black/40" onClick={onClose} />
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[calc(100dvh-env(safe-area-inset-top)-12px)] min-h-[60dvh] max-w-2xl animate-sheet-in flex-col overflow-hidden rounded-t-[10px] bg-sheet shadow-2xl"
-      >
-        <div className="mx-auto mt-1 h-1 w-8 shrink-0 rounded-full bg-label3" />
-        <div className="grid h-10 shrink-0 grid-cols-[1fr_auto_1fr] items-center px-2">
-          <div className="flex justify-start">{left}</div>
-          <div className="truncate text-center text-[15px] font-semibold">{title}</div>
-          <div className="flex justify-end">{right}</div>
-        </div>
-        <div className="flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+24px)]">
-          {children}
-        </div>
-      </div>
-    </div>,
-    document.body,
-  )
-}
-
 export interface SheetAction {
   label: string
   onSelect: () => void

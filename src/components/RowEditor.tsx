@@ -1,52 +1,85 @@
 import { useState } from 'react'
-import type { EstimateRow } from '../lib/types'
+import type { Estimate, EstimateRow } from '../lib/types'
 import { UNITS } from '../lib/types'
 import { currencySymbol, formatMoney, rowSum } from '../lib/money'
+import { newRow } from '../lib/storage'
+import { goBack } from '../lib/router'
 import { NumberInput } from './NumberInput'
-import { BarButton } from './ui/NavBar'
+import { BarButton, NavBar } from './ui/NavBar'
 import { Cell, Group } from './ui/Group'
-import { Sheet } from './ui/Sheet'
 import { ArrowDown, ArrowUp } from './ui/icons'
 
 interface Props {
-  row: EstimateRow
-  isNew: boolean
-  currency: string
-  canMoveUp: boolean
-  canMoveDown: boolean
-  onSave: (row: EstimateRow) => void
-  onClose: () => void
-  onDelete: () => void
-  /** Saves the current draft and moves it in one update. */
-  onMove: (row: EstimateRow, delta: -1 | 1) => void
+  estimate: Estimate
+  /** `null` adds a new row. */
+  rowId: string | null
+  onChange: (estimate: Estimate) => void
 }
 
 const fieldClass = 'w-full min-w-0 bg-transparent text-right text-[15px] tabular-nums outline-none'
 
-export function RowSheet({ row, isNew, currency, canMoveUp, canMoveDown, onSave, onClose, onDelete, onMove }: Props) {
-  const [draft, setDraft] = useState(row)
+/** Full-screen page for adding or editing a single estimate row. */
+export function RowEditor({ estimate, rowId, onChange }: Props) {
+  const isNew = rowId === null
+  const existing = isNew ? undefined : estimate.rows.find((r) => r.id === rowId)
+  const [draft, setDraft] = useState<EstimateRow>(() => existing ?? newRow())
+  // Checked once so the form doesn't flash "not found" right after deleting the row.
+  const [found] = useState(isNew || existing !== undefined)
   const set = (patch: Partial<EstimateRow>) => setDraft((d) => ({ ...d, ...patch }))
   const canSave = draft.name.trim().length > 0
   const isPresetUnit = (UNITS as readonly string[]).includes(draft.unit)
+  const currency = estimate.currency
+  const index = estimate.rows.findIndex((r) => r.id === draft.id)
+  const canMoveUp = index > 0
+  const canMoveDown = index >= 0 && index < estimate.rows.length - 1
+
+  const close = () => goBack({ page: 'edit', id: estimate.id })
 
   const save = () => {
     if (!canSave) return
-    onSave({ ...draft, name: draft.name.trim(), unit: draft.unit.trim() })
-    onClose()
+    const row = { ...draft, name: draft.name.trim(), unit: draft.unit.trim() }
+    onChange({
+      ...estimate,
+      rows: estimate.rows.some((r) => r.id === row.id)
+        ? estimate.rows.map((r) => (r.id === row.id ? row : r))
+        : [...estimate.rows, row],
+    })
+    close()
+  }
+
+  const move = (delta: -1 | 1) => {
+    const rows = estimate.rows.map((r) => (r.id === draft.id ? draft : r))
+    const j = index + delta
+    if (index < 0 || j < 0 || j >= rows.length) return
+    ;[rows[index], rows[j]] = [rows[j], rows[index]]
+    onChange({ ...estimate, rows })
+  }
+
+  const remove = () => {
+    onChange({ ...estimate, rows: estimate.rows.filter((r) => r.id !== draft.id) })
+    close()
+  }
+
+  if (!found) {
+    return (
+      <>
+        <NavBar left={<BarButton onClick={close}>Назад</BarButton>} />
+        <p className="pt-24 text-center text-label2">Позиция не найдена</p>
+      </>
+    )
   }
 
   return (
-    <Sheet
-      open
-      onClose={onClose}
-      title={isNew ? 'Новая позиция' : 'Позиция'}
-      left={<BarButton onClick={onClose}>Отменить</BarButton>}
-      right={
-        <BarButton bold disabled={!canSave} onClick={save}>
-          {isNew ? 'Добавить' : 'Готово'}
-        </BarButton>
-      }
-    >
+    <div className="min-h-dvh pb-[calc(env(safe-area-inset-bottom)+24px)]">
+      <NavBar
+        title={isNew ? 'Новая позиция' : 'Позиция'}
+        left={<BarButton onClick={close}>Отменить</BarButton>}
+        right={
+          <BarButton bold disabled={!canSave} onClick={save}>
+            {isNew ? 'Добавить' : 'Готово'}
+          </BarButton>
+        }
+      />
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -131,13 +164,13 @@ export function RowSheet({ row, isNew, currency, canMoveUp, canMoveDown, onSave,
         {!isNew && (
           <>
             <Group>
-              <button type="button" disabled={!canMoveUp} onClick={() => onMove(draft, -1)} className="block w-full text-left text-tint active:bg-card-pressed disabled:text-label3">
+              <button type="button" disabled={!canMoveUp} onClick={() => move(-1)} className="block w-full text-left text-tint active:bg-card-pressed disabled:text-label3">
                 <Cell>
                   <ArrowUp className="size-4" />
                   Переместить выше
                 </Cell>
               </button>
-              <button type="button" disabled={!canMoveDown} onClick={() => onMove(draft, 1)} className="block w-full text-left text-tint active:bg-card-pressed disabled:text-label3">
+              <button type="button" disabled={!canMoveDown} onClick={() => move(1)} className="block w-full text-left text-tint active:bg-card-pressed disabled:text-label3">
                 <Cell>
                   <ArrowDown className="size-4" />
                   Переместить ниже
@@ -147,10 +180,7 @@ export function RowSheet({ row, isNew, currency, canMoveUp, canMoveDown, onSave,
             <Group>
               <button
                 type="button"
-                onClick={() => {
-                  onDelete()
-                  onClose()
-                }}
+                onClick={remove}
                 className="h-10 w-full text-center text-red active:bg-card-pressed"
               >
                 Удалить позицию
@@ -160,6 +190,6 @@ export function RowSheet({ row, isNew, currency, canMoveUp, canMoveDown, onSave,
         )}
         <button type="submit" hidden />
       </form>
-    </Sheet>
+    </div>
   )
 }

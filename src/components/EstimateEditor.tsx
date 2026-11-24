@@ -1,11 +1,9 @@
 import { useState } from 'react'
-import type { Estimate, EstimateRow } from '../lib/types'
+import type { Estimate } from '../lib/types'
 import { CURRENCIES } from '../lib/types'
 import { currencyName, estimateTotal, formatMoney, formatNumber, plural, rowSum } from '../lib/money'
-import { newRow } from '../lib/storage'
 import { navigate } from '../lib/router'
 import { exportEstimateToExcel } from '../lib/exportExcel'
-import { RowSheet } from './RowSheet'
 import { BarButton, NavBar } from './ui/NavBar'
 import { ActionSheet } from './ui/Sheet'
 import { SwipeRow } from './ui/SwipeRow'
@@ -20,32 +18,13 @@ interface Props {
   onDuplicate: (id: string) => Estimate | undefined
 }
 
-type Editing = { row: EstimateRow; isNew: boolean } | null
-
 export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Props) {
-  const [editing, setEditing] = useState<Editing>(null)
   const [openSwipe, setOpenSwipe] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [exporting, setExporting] = useState(false)
 
   const set = (patch: Partial<Estimate>) => onChange({ ...estimate, ...patch })
-
-  const saveRow = (row: EstimateRow) =>
-    set({
-      rows: estimate.rows.some((r) => r.id === row.id)
-        ? estimate.rows.map((r) => (r.id === row.id ? row : r))
-        : [...estimate.rows, row],
-    })
-
-  const moveRow = (row: EstimateRow, delta: -1 | 1) => {
-    const rows = estimate.rows.map((r) => (r.id === row.id ? row : r))
-    const i = rows.findIndex((r) => r.id === row.id)
-    const j = i + delta
-    if (i < 0 || j < 0 || j >= rows.length) return
-    ;[rows[i], rows[j]] = [rows[j], rows[i]]
-    set({ rows })
-  }
 
   const removeRow = (id: string) => set({ rows: estimate.rows.filter((r) => r.id !== id) })
 
@@ -61,8 +40,6 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
   const currencies: string[] = (CURRENCIES as readonly string[]).includes(estimate.currency)
     ? [...CURRENCIES]
     : [estimate.currency, ...CURRENCIES]
-
-  const editingIndex = editing ? estimate.rows.findIndex((r) => r.id === editing.row.id) : -1
 
   return (
     <div className="min-h-dvh pb-[calc(env(safe-area-inset-bottom)+72px)]">
@@ -125,7 +102,7 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
             key={row.id}
             open={openSwipe === row.id}
             onOpenChange={(open) => setOpenSwipe(open ? row.id : null)}
-            onClick={() => setEditing({ row, isNew: false })}
+            onClick={() => navigate({ page: 'row', id: estimate.id, rowId: row.id })}
             actions={[{ label: 'Удалить', icon: <Trash className="size-4" />, className: 'bg-red', onSelect: () => removeRow(row.id) }]}
           >
             <Cell className="cursor-pointer">
@@ -142,7 +119,7 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
         ))}
         <button
           type="button"
-          onClick={() => setEditing({ row: newRow(), isNew: true })}
+          onClick={() => navigate({ page: 'row', id: estimate.id, rowId: null })}
           className="block w-full text-left text-tint active:bg-card-pressed"
         >
           <Cell>
@@ -171,21 +148,6 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
           {exporting ? 'Готовлю…' : 'Excel'}
         </button>
       </BottomBar>
-
-      {editing && (
-        <RowSheet
-          key={editing.row.id}
-          row={editing.row}
-          isNew={editing.isNew}
-          currency={estimate.currency}
-          canMoveUp={editingIndex > 0}
-          canMoveDown={editingIndex >= 0 && editingIndex < estimate.rows.length - 1}
-          onSave={saveRow}
-          onMove={moveRow}
-          onDelete={() => removeRow(editing.row.id)}
-          onClose={() => setEditing(null)}
-        />
-      )}
 
       <ActionSheet
         open={menuOpen}
