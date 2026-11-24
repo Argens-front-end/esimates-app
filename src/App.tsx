@@ -1,4 +1,4 @@
-import { Navigate, Outlet, ScrollRestoration, createHashRouter, useNavigate, useParams } from 'react-router'
+import { Navigate, Outlet, ScrollRestoration, createHashRouter, useNavigate, useParams, useRouteError } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { EstimateEditor } from './components/EstimateEditor'
 import { EstimateList } from './components/EstimateList'
@@ -14,6 +14,7 @@ import { useEstimates } from './lib/storage'
 const router = createHashRouter([
   {
     element: <Layout />,
+    errorElement: <RethrowRouteError />,
     children: [
       { index: true, element: <ListScreen /> },
       { path: 'estimate/:id', element: <EditScreen /> },
@@ -37,6 +38,11 @@ export default function App() {
 function StorageErrorToast() {
   const { storageError, clearStorageError } = useEstimates()
   return <Toast message={storageError} onHide={clearStorageError} />
+}
+
+/** Hands route render errors to the app-wide ErrorBoundary instead of React Router's default error page. */
+function RethrowRouteError(): never {
+  throw useRouteError()
 }
 
 function Layout() {
