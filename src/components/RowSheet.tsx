@@ -1,0 +1,165 @@
+import { useState } from 'react'
+import type { EstimateRow } from '../lib/types'
+import { UNITS } from '../lib/types'
+import { currencySymbol, formatMoney, rowSum } from '../lib/money'
+import { NumberInput } from './NumberInput'
+import { BarButton } from './ui/NavBar'
+import { Cell, Group } from './ui/Group'
+import { Sheet } from './ui/Sheet'
+import { ArrowDown, ArrowUp } from './ui/icons'
+
+interface Props {
+  row: EstimateRow
+  isNew: boolean
+  currency: string
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onSave: (row: EstimateRow) => void
+  onClose: () => void
+  onDelete: () => void
+  /** Saves the current draft and moves it in one update. */
+  onMove: (row: EstimateRow, delta: -1 | 1) => void
+}
+
+const fieldClass = 'w-full min-w-0 bg-transparent text-right text-[15px] tabular-nums outline-none'
+
+export function RowSheet({ row, isNew, currency, canMoveUp, canMoveDown, onSave, onClose, onDelete, onMove }: Props) {
+  const [draft, setDraft] = useState(row)
+  const set = (patch: Partial<EstimateRow>) => setDraft((d) => ({ ...d, ...patch }))
+  const canSave = draft.name.trim().length > 0
+  const isPresetUnit = (UNITS as readonly string[]).includes(draft.unit)
+
+  const save = () => {
+    if (!canSave) return
+    onSave({ ...draft, name: draft.name.trim(), unit: draft.unit.trim() })
+    onClose()
+  }
+
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      title={isNew ? 'Новая позиция' : 'Позиция'}
+      left={<BarButton onClick={onClose}>Отменить</BarButton>}
+      right={
+        <BarButton bold disabled={!canSave} onClick={save}>
+          {isNew ? 'Добавить' : 'Готово'}
+        </BarButton>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          save()
+        }}
+      >
+        <Group header="Наименование">
+          <div className="px-3 py-2">
+            <textarea
+              autoFocus={isNew}
+              rows={2}
+              value={draft.name}
+              placeholder="Работы или материалы"
+              enterKeyHint="next"
+              onChange={(e) => set({ name: e.target.value.replace(/\n/g, ' ') })}
+              className="block w-full resize-none bg-transparent text-[15px] leading-snug outline-none"
+            />
+          </div>
+        </Group>
+
+        <Group>
+          <label className="block">
+            <Cell>
+              <span className="shrink-0">Количество</span>
+              <NumberInput
+                aria-label="Количество"
+                value={draft.quantity}
+                onChange={(quantity) => set({ quantity })}
+                className={fieldClass}
+              />
+              <span className="shrink-0 text-label2">{draft.unit}</span>
+            </Cell>
+          </label>
+          <label className="block">
+            <Cell>
+              <span className="shrink-0">Цена за ед.</span>
+              <NumberInput
+                aria-label="Цена за единицу"
+                enterKeyHint="done"
+                value={draft.price}
+                onChange={(price) => set({ price })}
+                className={fieldClass}
+              />
+              <span className="shrink-0 text-label2">{currencySymbol(currency)}</span>
+            </Cell>
+          </label>
+          <Cell>
+            <span className="flex-1 font-semibold">Сумма</span>
+            <span className="font-semibold tabular-nums">{formatMoney(rowSum(draft), currency)}</span>
+          </Cell>
+        </Group>
+
+        <Group header="Единица измерения">
+          <div className="flex flex-wrap gap-1.5 p-2.5">
+            {UNITS.map((u) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => set({ unit: u })}
+                className={`h-7 min-w-10 rounded-full px-3 text-[13px] transition-colors active:scale-95 ${
+                  draft.unit === u ? 'bg-tint font-medium text-white' : 'bg-fill text-label'
+                }`}
+              >
+                {u}
+              </button>
+            ))}
+          </div>
+          <label className="block border-t-[0.5px] border-sep">
+            <Cell>
+              <span className="shrink-0">Своя</span>
+              <input
+                aria-label="Своя единица измерения"
+                value={isPresetUnit ? '' : draft.unit}
+                placeholder="напр. рулон"
+                onChange={(e) => set({ unit: e.target.value })}
+                className="w-full min-w-0 bg-transparent text-right outline-none"
+              />
+            </Cell>
+          </label>
+        </Group>
+
+        {!isNew && (
+          <>
+            <Group>
+              <button type="button" disabled={!canMoveUp} onClick={() => onMove(draft, -1)} className="block w-full text-left text-tint active:bg-card-pressed disabled:text-label3">
+                <Cell>
+                  <ArrowUp className="size-4" />
+                  Переместить выше
+                </Cell>
+              </button>
+              <button type="button" disabled={!canMoveDown} onClick={() => onMove(draft, 1)} className="block w-full text-left text-tint active:bg-card-pressed disabled:text-label3">
+                <Cell>
+                  <ArrowDown className="size-4" />
+                  Переместить ниже
+                </Cell>
+              </button>
+            </Group>
+            <Group>
+              <button
+                type="button"
+                onClick={() => {
+                  onDelete()
+                  onClose()
+                }}
+                className="h-10 w-full text-center text-red active:bg-card-pressed"
+              >
+                Удалить позицию
+              </button>
+            </Group>
+          </>
+        )}
+        <button type="submit" hidden />
+      </form>
+    </Sheet>
+  )
+}

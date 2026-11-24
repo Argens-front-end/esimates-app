@@ -1,0 +1,87 @@
+@import 'tailwindcss';
+
+:root {
+  --bg: #f2f2f7;
+  --card: #ffffff;
+  --card-pressed: #e5e5ea;
+  --label: #000000;
+  --label2: rgb(60 60 67 / 0.6);
+  --label3: rgb(60 60 67 / 0.3);
+  --sep: rgb(60 60 67 / 0.29);
+  --fill: rgb(118 118 128 / 0.12);
+  --bar: rgb(249 249 249 / 0.8);
+  --tint: #007aff;
+  --red: #ff3b30;
+  --green: #34c759;
+  --gray: #8e8e93;
+  --sheet-bg: #f2f2f7;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --card: #1c1c1e;
+    --card-pressed: #2c2c2e;
+    --label: #ffffff;
+    --label2: rgb(235 235 245 / 0.6);
+    --label3: rgb(235 235 245 / 0.3);
+    --sep: rgb(84 84 88 / 0.6);
+    --fill: rgb(118 118 128 / 0.24);
+    --bar: rgb(22 22 22 / 0.8);
+    --tint: #0a84ff;
+    --red: #ff453a;
+    --green: #30d158;
+    --gray: #8e8e93;
+    --sheet-bg: #1c1c1e;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-card-pressed: var(--card-pressed);
+  --color-label: var(--label);
+  --color-label2: var(--label2);
+  --color-label3: var(--label3);
+  --color-sep: var(--sep);
+  --color-fill: var(--fill);
+  --color-bar: var(--bar);
+  --color-tint: var(--tint);
+  --color-red: var(--red);
+  --color-green: var(--green);
+  --color-gray: var(--gray);
+  --color-sheet: var(--sheet-bg);
+
+  --animate-sheet-in: sheet-in 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-fade-in: fade-in 0.25s ease-out;
+
+  @keyframes sheet-in {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-bg font-sans text-[15px] leading-snug tracking-[-0.24px] text-label antialiased;
+    overscroll-behavior-y: none;
+  }
+  input, select, textarea, button {
+    font: inherit;
+    letter-spacing: inherit;
+  }
+  input::placeholder {
+    color: var(--label3);
+  }
+}
