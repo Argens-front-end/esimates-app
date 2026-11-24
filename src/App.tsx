@@ -1,4 +1,5 @@
-import { useLayoutEffect } from 'react'
+import { Navigate, Outlet, ScrollRestoration, createHashRouter, useNavigate, useParams } from 'react-router'
+import { RouterProvider } from 'react-router/dom'
 import { EstimateEditor } from './components/EstimateEditor'
 import { EstimateList } from './components/EstimateList'
 import { RowEditor } from './components/RowEditor'
@@ -6,13 +7,27 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { NavBar, BarButton } from './components/ui/NavBar'
 import { ChevronLeft } from './components/ui/icons'
 import { Toast } from './components/ui/Toast'
-import { getLastNavigation, getSavedScroll, navigate, useRoute } from './lib/router'
+import { NEW_ROW, paths } from './lib/router'
 import { useEstimates } from './lib/storage'
 
+// Hash history keeps routing working when the single-file build is opened from disk or as an installed PWA.
+const router = createHashRouter([
+  {
+    element: <Layout />,
+    children: [
+      { index: true, element: <ListScreen /> },
+      { path: 'estimate/:id', element: <EditScreen /> },
+      { path: 'estimate/:id/row/:rowId', element: <RowScreen /> },
+      { path: '*', element: <Navigate to={paths.list()} replace /> },
+    ],
+  },
+])
+
 export default function App() {
+  const { ready } = useEstimates()
   return (
     <>
-      <Screens />
+      {ready && <RouterProvider router={router} />}
       <UpdateBanner />
       <StorageErrorToast />
     </>
@@ -24,49 +39,59 @@ function StorageErrorToast() {
   return <Toast message={storageError} onHide={clearStorageError} />
 }
 
-function Screens() {
-  const route = useRoute()
-  const { ready, estimates, create, update, remove, duplicate, importMany } = useEstimates()
+function Layout() {
+  return (
+    <>
+      <Outlet />
+      <ScrollRestoration />
+    </>
+  )
+}
 
-  const routeKey = route.page === 'list' ? 'list' : route.page === 'edit' ? route.id : `${route.id}/${route.rowId ?? 'new'}`
-  useLayoutEffect(() => {
-    if (!ready) return
-    window.scrollTo(0, getLastNavigation() === 'pop' ? (getSavedScroll() ?? 0) : 0)
-  }, [routeKey, ready])
-
-  const handleCreate = () => {
-    const estimate = create()
-    navigate({ page: 'edit', id: estimate.id })
-  }
-
-  if (!ready) return null
-
-  if (route.page === 'edit' || route.page === 'row') {
-    const current = estimates.find((e) => e.id === route.id)
-    if (!current) {
-      return (
-        <>
-          <NavBar
-            left={
-              <BarButton onClick={() => navigate({ page: 'list' })}>
-                <ChevronLeft className="h-[17px] w-[10px]" />
-                Сметы
-              </BarButton>
-            }
-          />
-          <p className="pt-24 text-center text-label2">Смета не найдена</p>
-        </>
-      )
-    }
-    if (route.page === 'row') {
-      return <RowEditor key={routeKey} estimate={current} rowId={route.rowId} onChange={update} />
-    }
-    return (
-      <EstimateEditor key={current.id} estimate={current} onChange={update} onDelete={remove} onDuplicate={duplicate} />
-    )
-  }
-
+function ListScreen() {
+  const navigate = useNavigate()
+  const { estimates, create, remove, duplicate, importMany } = useEstimates()
+  const handleCreate = () => void navigate(paths.estimate(create().id))
   return (
     <EstimateList estimates={estimates} onCreate={handleCreate} onDelete={remove} onDuplicate={duplicate} onImport={importMany} />
+  )
+}
+
+function useCurrentEstimate() {
+  const { id } = useParams()
+  return useEstimates().estimates.find((e) => e.id === id)
+}
+
+function EditScreen() {
+  const { update, remove, duplicate } = useEstimates()
+  const current = useCurrentEstimate()
+  if (!current) return <NotFound />
+  return <EstimateEditor key={current.id} estimate={current} onChange={update} onDelete={remove} onDuplicate={duplicate} />
+}
+
+function RowScreen() {
+  const { rowId = NEW_ROW } = useParams()
+  const { update } = useEstimates()
+  const current = useCurrentEstimate()
+  if (!current) return <NotFound />
+  return (
+    <RowEditor key={`${current.id}/${rowId}`} estimate={current} rowId={rowId === NEW_ROW ? null : rowId} onChange={update} />
+  )
+}
+
+function NotFound() {
+  const navigate = useNavigate()
+  return (
+    <>
+      <NavBar
+        left={
+          <BarButton onClick={() => void navigate(paths.list())}>
+            <ChevronLeft className="h-[17px] w-[10px]" />
+            Сметы
+          </BarButton>
+        }
+      />
+      <p className="pt-24 text-center text-label2">Смета не найдена</p>
+    </>
   )
 }

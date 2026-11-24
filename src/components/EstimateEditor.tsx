@@ -2,8 +2,10 @@ import { useState } from 'react'
 import type { Estimate } from '../lib/types'
 import { CURRENCIES } from '../lib/types'
 import { currencyName, estimateTotal, formatMoney, formatNumber, plural, rowSum } from '../lib/money'
-import { navigate } from '../lib/router'
-import { exportEstimateToExcel } from '../lib/exportExcel'
+import { useNavigate } from 'react-router'
+import { paths } from '../lib/router'
+import { type ExportFormat, exportEstimate } from '../lib/exportEstimate'
+import { ExportSheet } from './ExportSheet'
 import { BarButton, NavBar } from './ui/NavBar'
 import { ActionSheet } from './ui/Sheet'
 import { SwipeRow } from './ui/SwipeRow'
@@ -19,19 +21,21 @@ interface Props {
 }
 
 export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Props) {
+  const navigate = useNavigate()
   const [openSwipe, setOpenSwipe] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
 
   const set = (patch: Partial<Estimate>) => onChange({ ...estimate, ...patch })
 
   const removeRow = (id: string) => set({ rows: estimate.rows.filter((r) => r.id !== id) })
 
-  const exportExcel = async () => {
+  const runExport = async (format: ExportFormat) => {
     setExporting(true)
     try {
-      await exportEstimateToExcel(estimate)
+      await exportEstimate(estimate, format)
     } finally {
       setExporting(false)
     }
@@ -46,7 +50,7 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
       <NavBar
         title={estimate.title || 'Без названия'}
         left={
-          <BarButton onClick={() => navigate({ page: 'list' })}>
+          <BarButton onClick={() => navigate(paths.list())}>
             <ChevronLeft className="h-[17px] w-[10px]" />
             Сметы
           </BarButton>
@@ -102,7 +106,7 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
             key={row.id}
             open={openSwipe === row.id}
             onOpenChange={(open) => setOpenSwipe(open ? row.id : null)}
-            onClick={() => navigate({ page: 'row', id: estimate.id, rowId: row.id })}
+            onClick={() => navigate(paths.row(estimate.id, row.id))}
             actions={[{ label: 'Удалить', icon: <Trash className="size-4" />, className: 'bg-red', onSelect: () => removeRow(row.id) }]}
           >
             <Cell className="cursor-pointer">
@@ -119,7 +123,7 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
         ))}
         <button
           type="button"
-          onClick={() => navigate({ page: 'row', id: estimate.id, rowId: null })}
+          onClick={() => navigate(paths.row(estimate.id, null))}
           className="block w-full text-left text-tint active:bg-card-pressed"
         >
           <Cell>
@@ -141,11 +145,11 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
         <button
           type="button"
           disabled={exporting}
-          onClick={exportExcel}
+          onClick={() => setExportOpen(true)}
           className="my-1.5 flex h-8 shrink-0 items-center gap-1 rounded-full bg-tint px-3.5 text-[14px] font-semibold text-white active:opacity-70 disabled:opacity-60"
         >
           <Share className="size-[15px]" />
-          {exporting ? 'Готовлю…' : 'Excel'}
+          {exporting ? 'Готовлю…' : 'Экспорт'}
         </button>
       </BottomBar>
 
@@ -154,16 +158,22 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
         onClose={() => setMenuOpen(false)}
         title={estimate.title || 'Без названия'}
         actions={[
-          { label: 'Экспорт в Excel', onSelect: exportExcel },
+          { label: 'Экспорт…', onSelect: () => setExportOpen(true) },
           {
             label: 'Дублировать',
             onSelect: () => {
               const copy = onDuplicate(estimate.id)
-              if (copy) navigate({ page: 'edit', id: copy.id })
+              if (copy) void navigate(paths.estimate(copy.id))
             },
           },
           { label: 'Удалить смету', destructive: true, onSelect: () => setConfirmDelete(true) },
         ]}
+      />
+
+      <ExportSheet
+        estimate={exportOpen ? estimate : null}
+        onClose={() => setExportOpen(false)}
+        onExport={(format) => void runExport(format)}
       />
 
       <ActionSheet
@@ -176,7 +186,7 @@ export function EstimateEditor({ estimate, onChange, onDelete, onDuplicate }: Pr
             destructive: true,
             onSelect: () => {
               onDelete(estimate.id)
-              navigate({ page: 'list' })
+              navigate(paths.list())
             },
           },
         ]}

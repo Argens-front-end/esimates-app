@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from 'react'
 import type { Estimate } from '../lib/types'
 import { estimateTotal, formatMoney, formatShortDate, plural } from '../lib/money'
-import { navigate } from '../lib/router'
-import { exportEstimateToExcel } from '../lib/exportExcel'
+import { useNavigate } from 'react-router'
+import { paths } from '../lib/router'
+import { ExportSheet } from './ExportSheet'
 import { exportBackup, readBackup } from '../lib/backup'
 import type { ImportResult } from '../lib/storage'
 import { Toast } from './ui/Toast'
@@ -10,7 +11,7 @@ import { BarButton, NavBar } from './ui/NavBar'
 import { ActionSheet } from './ui/Sheet'
 import { SwipeRow } from './ui/SwipeRow'
 import { Cell } from './ui/Group'
-import { ChevronRight, Copy, DocText, Ellipsis, Search, Table, Trash, XCircleFill } from './ui/icons'
+import { ChevronRight, Copy, DocText, Ellipsis, Search, Share, Trash, XCircleFill } from './ui/icons'
 import { BottomBar } from './ui/BottomBar'
 
 interface Props {
@@ -22,9 +23,11 @@ interface Props {
 }
 
 export function EstimateList({ estimates, onCreate, onDelete, onDuplicate, onImport }: Props) {
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [openSwipe, setOpenSwipe] = useState<string | null>(null)
   const [toDelete, setToDelete] = useState<Estimate | null>(null)
+  const [toExport, setToExport] = useState<Estimate | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const hideToast = useCallback(() => setToast(null), [])
@@ -117,9 +120,9 @@ export function EstimateList({ estimates, onCreate, onDelete, onDuplicate, onImp
                 key={e.id}
                 open={openSwipe === e.id}
                 onOpenChange={(open) => setOpenSwipe(open ? e.id : null)}
-                onClick={() => navigate({ page: 'edit', id: e.id })}
+                onClick={() => navigate(paths.estimate(e.id))}
                 actions={[
-                  { label: 'Excel', icon: <Table className="size-4" />, className: 'bg-tint', onSelect: () => exportEstimateToExcel(e) },
+                  { label: 'Экспорт', icon: <Share className="size-4" />, className: 'bg-tint', onSelect: () => setToExport(e) },
                   { label: 'Копия', icon: <Copy className="size-4" />, className: 'bg-gray', onSelect: () => onDuplicate(e.id) },
                   { label: 'Удалить', icon: <Trash className="size-4" />, className: 'bg-red', onSelect: () => setToDelete(e) },
                 ]}
@@ -183,6 +186,8 @@ export function EstimateList({ estimates, onCreate, onDelete, onDuplicate, onImp
       />
 
       <Toast message={toast} onHide={hideToast} />
+
+      <ExportSheet estimate={toExport} onClose={() => setToExport(null)} />
 
       <ActionSheet
         open={toDelete !== null}

@@ -3,7 +3,7 @@ import type { Estimate, EstimateRow } from '../lib/types'
 import { UNITS } from '../lib/types'
 import { currencySymbol, formatMoney, rowSum } from '../lib/money'
 import { newRow } from '../lib/storage'
-import { goBack } from '../lib/router'
+import { paths, useGoBack } from '../lib/router'
 import { NumberInput } from './NumberInput'
 import { BarButton, NavBar } from './ui/NavBar'
 import { Cell, Group } from './ui/Group'
@@ -33,7 +33,8 @@ export function RowEditor({ estimate, rowId, onChange }: Props) {
   const canMoveUp = index > 0
   const canMoveDown = index >= 0 && index < estimate.rows.length - 1
 
-  const close = () => goBack({ page: 'edit', id: estimate.id })
+  const goBack = useGoBack()
+  const close = () => goBack(paths.estimate(estimate.id))
 
   const save = () => {
     if (!canSave) return
