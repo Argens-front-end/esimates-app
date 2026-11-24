@@ -5,6 +5,7 @@ import { RowEditor } from './components/RowEditor'
 import { UpdateBanner } from './components/UpdateBanner'
 import { NavBar, BarButton } from './components/ui/NavBar'
 import { ChevronLeft } from './components/ui/icons'
+import { Toast } from './components/ui/Toast'
 import { getLastNavigation, getSavedScroll, navigate, useRoute } from './lib/router'
 import { useEstimates } from './lib/storage'
 
@@ -13,8 +14,14 @@ export default function App() {
     <>
       <Screens />
       <UpdateBanner />
+      <StorageErrorToast />
     </>
   )
+}
+
+function StorageErrorToast() {
+  const { storageError, clearStorageError } = useEstimates()
+  return <Toast message={storageError} onHide={clearStorageError} />
 }
 
 function Screens() {

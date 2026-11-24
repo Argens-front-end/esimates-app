@@ -26,10 +26,10 @@ const LOCAL_STORAGE_KEY = 'estimates.v1'
 interface State {
   ready: boolean
   estimates: Estimate[]
-  error: Error | null
+  storageError: string | null
 }
 
-let state: State = { ready: false, estimates: [], error: null }
+let state: State = { ready: false, estimates: [], storageError: null }
 const listeners = new Set<() => void>()
 
 function setEstimates(estimates: Estimate[]) {
@@ -37,8 +37,8 @@ function setEstimates(estimates: Estimate[]) {
   listeners.forEach((l) => l())
 }
 
-function setError(message: string, cause: unknown) {
-  state = { ...state, ready: true, error: new Error(`${message}: ${(cause as Error)?.message ?? String(cause)}`, { cause }) }
+function setStorageError(storageError: string | null) {
+  state = { ...state, storageError }
   listeners.forEach((l) => l())
 }
 
@@ -126,7 +126,7 @@ channel?.addEventListener('message', () => void reload())
 function persist(op: Promise<unknown>) {
   op.then(
     () => channel?.postMessage('changed'),
-    (e: unknown) => setError('Не удалось сохранить данные в памяти браузера', e),
+    (e: unknown) => setStorageError(`Не удалось сохранить: ${(e as Error)?.message ?? String(e)}`),
   )
 }
 
@@ -145,8 +145,14 @@ async function migrateFromOtherBackend(): Promise<Estimate[]> {
   return other
 }
 
+const loadErrorMessage = (e: unknown) => `Не удалось загрузить сметы (${backend.name}): ${(e as Error)?.message ?? String(e)}`
+
 async function reload() {
-  setEstimates(await backend.getAll())
+  try {
+    setEstimates(await backend.getAll())
+  } catch (e) {
+    setStorageError(loadErrorMessage(e))
+  }
 }
 
 let loading: Promise<void> | null = null
@@ -160,7 +166,8 @@ function ensureLoaded() {
       // Ask the browser not to evict our data under storage pressure.
       void navigator.storage?.persist?.()
     } catch (e) {
-      setError(`Не удалось открыть хранилище браузера (${backend.name})`, e)
+      setEstimates([])
+      setStorageError(loadErrorMessage(e))
     }
   })()
 }
@@ -189,7 +196,7 @@ export interface ImportResult {
 }
 
 export function useEstimates() {
-  const { ready, estimates, error } = useSyncExternalStore(subscribe, getSnapshot)
+  const { ready, estimates, storageError } = useSyncExternalStore(subscribe, getSnapshot)
   const create = useCallback((currency: string = DEFAULT_CURRENCY): Estimate => {
     const now = new Date().toISOString()
     const estimate: Estimate = { id: uid(), title: '', currency, rows: [], createdAt: now, updatedAt: now }
@@ -249,8 +256,7 @@ export function useEstimates() {
     return result
   }, [])
 
-  // Surface storage failures to the nearest ErrorBoundary.
-  if (error) throw error
+  const clearStorageError = useCallback(() => setStorageError(null), [])
 
-  return { ready, estimates, create, update, remove, duplicate, importMany }
+  return { ready, estimates, storageError, clearStorageError, create, update, remove, duplicate, importMany }
 }
