@@ -2,26 +2,47 @@ import { useCallback, useSyncExternalStore } from 'react'
 import type { Estimate, EstimateRow } from './types'
 import { DEFAULT_CURRENCY } from './types'
 
+/**
+ * Active storage backend. Switch to 'indexedDB' or 'localStorage' here.
+ * On first load, if the active backend is empty, data is migrated from the other one.
+ */
+const STORAGE_BACKEND = 'localStorage' as StorageBackendKind
+
+type StorageBackendKind = 'indexedDB' | 'localStorage'
+
+interface StorageBackend {
+  name: string
+  getAll(): Promise<Estimate[]>
+  putMany(items: Estimate[]): Promise<void>
+  delete(id: string): Promise<void>
+  clear(): Promise<void>
+}
+
 const DB_NAME = 'estimates'
 const DB_VERSION = 1
 const STORE = 'estimates'
-/** Pre-IndexedDB storage; migrated once on first load and then removed. */
-const LEGACY_LOCAL_STORAGE_KEY = 'estimates.v1'
+const LOCAL_STORAGE_KEY = 'estimates.v1'
 
 interface State {
   ready: boolean
   estimates: Estimate[]
+  error: Error | null
 }
 
-let state: State = { ready: false, estimates: [] }
+let state: State = { ready: false, estimates: [], error: null }
 const listeners = new Set<() => void>()
 
 function setEstimates(estimates: Estimate[]) {
-  state = { ready: true, estimates }
+  state = { ...state, ready: true, estimates }
   listeners.forEach((l) => l())
 }
 
-// ---------- IndexedDB ----------
+function setError(message: string, cause: unknown) {
+  state = { ...state, ready: true, error: new Error(`${message}: ${(cause as Error)?.message ?? String(cause)}`, { cause }) }
+  listeners.forEach((l) => l())
+}
+
+// ---------- IndexedDB backend ----------
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -48,9 +69,54 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
   })
 }
 
-const dbGetAll = () => withStore<Estimate[]>('readonly', (s) => s.getAll())
-const dbPutMany = (items: Estimate[]) => withStore('readwrite', (s) => items.forEach((e) => s.put(e)))
-const dbDelete = (id: string) => withStore('readwrite', (s) => s.delete(id))
+const indexedDbBackend: StorageBackend = {
+  name: 'IndexedDB',
+  getAll: () => withStore<Estimate[]>('readonly', (s) => s.getAll()),
+  putMany: async (items) => {
+    await withStore('readwrite', (s) => items.forEach((e) => s.put(e)))
+  },
+  delete: async (id) => {
+    await withStore('readwrite', (s) => s.delete(id))
+  },
+  clear: async () => {
+    await withStore('readwrite', (s) => s.clear())
+  },
+}
+
+// ---------- localStorage backend ----------
+
+function lsRead(): Estimate[] {
+  const raw = localStorage.getItem(LOCAL_STORAGE_KEY)
+  const parsed: unknown = raw ? JSON.parse(raw) : []
+  return Array.isArray(parsed) ? (parsed as Estimate[]) : []
+}
+
+function lsWrite(items: Estimate[]) {
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items))
+}
+
+const localStorageBackend: StorageBackend = {
+  name: 'localStorage',
+  getAll: async () => lsRead(),
+  putMany: async (items) => {
+    const byId = new Map(lsRead().map((e) => [e.id, e]))
+    items.forEach((e) => byId.set(e.id, e))
+    lsWrite([...byId.values()])
+  },
+  delete: async (id) => {
+    lsWrite(lsRead().filter((e) => e.id !== id))
+  },
+  clear: async () => {
+    localStorage.removeItem(LOCAL_STORAGE_KEY)
+  },
+}
+
+const backends: Record<StorageBackendKind, StorageBackend> = {
+  indexedDB: indexedDbBackend,
+  localStorage: localStorageBackend,
+}
+const backend = backends[STORAGE_BACKEND]
+const otherBackend = backends[STORAGE_BACKEND === 'indexedDB' ? 'localStorage' : 'indexedDB']
 
 // ---------- Sync between tabs ----------
 
@@ -60,29 +126,27 @@ channel?.addEventListener('message', () => void reload())
 function persist(op: Promise<unknown>) {
   op.then(
     () => channel?.postMessage('changed'),
-    (e: unknown) => alert('Не удалось сохранить данные в памяти браузера: ' + (e as Error)?.message),
+    (e: unknown) => setError('Не удалось сохранить данные в памяти браузера', e),
   )
 }
 
 // ---------- Loading & migration ----------
 
-async function migrateFromLocalStorage(): Promise<Estimate[]> {
-  let legacy: Estimate[] = []
+async function migrateFromOtherBackend(): Promise<Estimate[]> {
+  let other: Estimate[] = []
   try {
-    const raw = localStorage.getItem(LEGACY_LOCAL_STORAGE_KEY)
-    const parsed: unknown = raw ? JSON.parse(raw) : []
-    if (Array.isArray(parsed)) legacy = parsed as Estimate[]
+    other = await otherBackend.getAll()
   } catch {
     return []
   }
-  if (legacy.length === 0) return []
-  await dbPutMany(legacy)
-  localStorage.removeItem(LEGACY_LOCAL_STORAGE_KEY)
-  return legacy
+  if (other.length === 0) return []
+  await backend.putMany(other)
+  await otherBackend.clear().catch(() => undefined)
+  return other
 }
 
 async function reload() {
-  setEstimates(await dbGetAll())
+  setEstimates(await backend.getAll())
 }
 
 let loading: Promise<void> | null = null
@@ -90,14 +154,13 @@ let loading: Promise<void> | null = null
 function ensureLoaded() {
   loading ??= (async () => {
     try {
-      let all = await dbGetAll()
-      if (all.length === 0) all = await migrateFromLocalStorage()
+      let all = await backend.getAll()
+      if (all.length === 0) all = await migrateFromOtherBackend()
       setEstimates(all)
       // Ask the browser not to evict our data under storage pressure.
       void navigator.storage?.persist?.()
     } catch (e) {
-      setEstimates([])
-      alert('Не удалось открыть хранилище браузера (IndexedDB): ' + (e as Error)?.message)
+      setError(`Не удалось открыть хранилище браузера (${backend.name})`, e)
     }
   })()
 }
@@ -126,25 +189,24 @@ export interface ImportResult {
 }
 
 export function useEstimates() {
-  const { ready, estimates } = useSyncExternalStore(subscribe, getSnapshot)
-
+  const { ready, estimates, error } = useSyncExternalStore(subscribe, getSnapshot)
   const create = useCallback((currency: string = DEFAULT_CURRENCY): Estimate => {
     const now = new Date().toISOString()
     const estimate: Estimate = { id: uid(), title: '', currency, rows: [], createdAt: now, updatedAt: now }
     setEstimates([estimate, ...state.estimates])
-    persist(dbPutMany([estimate]))
+    persist(backend.putMany([estimate]))
     return estimate
   }, [])
 
   const update = useCallback((estimate: Estimate) => {
     const updated = { ...estimate, updatedAt: new Date().toISOString() }
     setEstimates(state.estimates.map((e) => (e.id === estimate.id ? updated : e)))
-    persist(dbPutMany([updated]))
+    persist(backend.putMany([updated]))
   }, [])
 
   const remove = useCallback((id: string) => {
     setEstimates(state.estimates.filter((e) => e.id !== id))
-    persist(dbDelete(id))
+    persist(backend.delete(id))
   }, [])
 
   const duplicate = useCallback((id: string): Estimate | undefined => {
@@ -160,7 +222,7 @@ export function useEstimates() {
       updatedAt: now,
     }
     setEstimates([copy, ...state.estimates])
-    persist(dbPutMany([copy]))
+    persist(backend.putMany([copy]))
     return copy
   }, [])
 
@@ -182,10 +244,13 @@ export function useEstimates() {
     }
     if (changed.length) {
       setEstimates([...byId.values()])
-      persist(dbPutMany(changed))
+      persist(backend.putMany(changed))
     }
     return result
   }, [])
+
+  // Surface storage failures to the nearest ErrorBoundary.
+  if (error) throw error
 
   return { ready, estimates, create, update, remove, duplicate, importMany }
 }
