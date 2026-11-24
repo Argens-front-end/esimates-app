@@ -1,48 +1,65 @@
-import type { Estimate } from './types'
-import { currencySymbol, estimateTotal, formatMoney, formatNumber, rowSum } from './money'
+import type { ExportDoc } from './exportDoc'
+import { docTotals } from './exportDoc'
+import { currencySymbol, formatMoney, formatNumber, formatTotalsMap, rowSum } from './money'
 import { sanitizeFileName, saveFile } from './saveFile'
 
-const baseName = (estimate: Estimate) => sanitizeFileName(estimate.title || 'Смета')
+const baseName = (doc: ExportDoc) => sanitizeFileName(doc.fileName)
 
 const mdCell = (s: string) => s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>')
 
-export function estimateToMarkdown(estimate: Estimate) {
-  const symbol = currencySymbol(estimate.currency)
-  const money = (v: number) => formatMoney(v, estimate.currency)
+export function docToMarkdown(doc: ExportDoc) {
+  const totals = docTotals(doc)
+  const single = totals.size === 1
+  const suffix = single ? `, ${mdCell(currencySymbol([...totals.keys()][0]))}` : ''
+  const table =
+    doc.layout === 'full'
+      ? [
+          `| № | Наименование услуги | Ед. изм. | Цена${suffix} | Количество | Сумма${suffix} |`,
+          '|---:|---|:---:|---:|---:|---:|',
+          ...doc.rows.map(
+            (r, i) =>
+              `| ${i + 1} | ${mdCell(r.name)} | ${mdCell(r.unit)} | ${formatMoney(r.price, r.currency)} | ${formatNumber(r.quantity)} | ${formatMoney(rowSum(r), r.currency)} |`,
+          ),
+        ]
+      : [
+          `| № | Наименование | Сумма${suffix} |`,
+          '|---:|---|---:|',
+          ...doc.rows.map((r, i) => `| ${i + 1} | ${mdCell(r.name)} | ${formatMoney(rowSum(r), r.currency)} |`),
+        ]
   const lines = [
-    `# Смета${estimate.title ? `: ${mdCell(estimate.title)}` : ''}`,
+    `# ${doc.heading}${doc.title ? `: ${mdCell(doc.title)}` : ''}`,
     '',
-    `| № | Наименование услуги | Ед. изм. | Цена, ${mdCell(symbol)} | Количество | Сумма, ${mdCell(symbol)} |`,
-    '|---:|---|:---:|---:|---:|---:|',
-    ...estimate.rows.map(
-      (r, i) =>
-        `| ${i + 1} | ${mdCell(r.name)} | ${mdCell(r.unit)} | ${money(r.price)} | ${formatNumber(r.quantity)} | ${money(rowSum(r))} |`,
-    ),
+    ...table,
     '',
-    `**Итого: ${money(estimateTotal(estimate))}**`,
+    `**Итого: ${formatTotalsMap(totals)}**`,
     '',
   ]
   return lines.join('\n')
 }
 
-export function estimateToText(estimate: Estimate) {
-  const money = (v: number) => formatMoney(v, estimate.currency)
-  const lines = ['Смета', ...(estimate.title ? [estimate.title] : []), '']
-  estimate.rows.forEach((r, i) => {
+export function docToText(doc: ExportDoc) {
+  const lines = [doc.heading, ...(doc.title ? [doc.title] : []), '']
+  doc.rows.forEach((r, i) => {
+    if (doc.layout === 'amounts') {
+      lines.push(`${i + 1}. ${r.name || 'Без названия'} — ${formatMoney(rowSum(r), r.currency)}`)
+      return
+    }
     lines.push(`${i + 1}. ${r.name || 'Без названия'}`)
-    lines.push(`   ${formatNumber(r.quantity)} ${r.unit} × ${money(r.price)} = ${money(rowSum(r))}`)
+    lines.push(
+      `   ${formatNumber(r.quantity)} ${r.unit} × ${formatMoney(r.price, r.currency)} = ${formatMoney(rowSum(r), r.currency)}`,
+    )
   })
-  if (estimate.rows.length > 0) lines.push('')
-  lines.push(`Итого: ${money(estimateTotal(estimate))}`, '')
+  if (doc.rows.length > 0) lines.push('')
+  lines.push(`Итого: ${formatTotalsMap(docTotals(doc))}`, '')
   return lines.join('\n')
 }
 
-export async function exportEstimateToMarkdown(estimate: Estimate) {
-  const blob = new Blob([estimateToMarkdown(estimate)], { type: 'text/markdown;charset=utf-8' })
-  await saveFile(blob, `${baseName(estimate)}.md`)
+export async function exportDocToMarkdown(doc: ExportDoc) {
+  const blob = new Blob([docToMarkdown(doc)], { type: 'text/markdown;charset=utf-8' })
+  await saveFile(blob, `${baseName(doc)}.md`)
 }
 
-export async function exportEstimateToText(estimate: Estimate) {
-  const blob = new Blob([estimateToText(estimate)], { type: 'text/plain;charset=utf-8' })
-  await saveFile(blob, `${baseName(estimate)}.txt`)
+export async function exportDocToText(doc: ExportDoc) {
+  const blob = new Blob([docToText(doc)], { type: 'text/plain;charset=utf-8' })
+  await saveFile(blob, `${baseName(doc)}.txt`)
 }

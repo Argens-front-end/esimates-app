@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
-import type { Estimate } from '../lib/types'
-import { estimateTotal, formatMoney, formatShortDate, plural } from '../lib/money'
+import type { Estimate, Project } from '../lib/types'
+import { estimateTotal, formatDate, formatMoney } from '../lib/money'
 import { paths } from '../lib/router'
+import { estimateDoc } from '../lib/exportDoc'
 import { ExportSheet } from './ExportSheet'
 import { ActionSheet } from './ui/Sheet'
 import { SwipeRow } from './ui/SwipeRow'
@@ -11,6 +12,8 @@ import { ChevronRight, Copy, Share, Trash } from './ui/icons'
 
 interface Props {
   estimates: Estimate[]
+  /** Used to prefix export file names. */
+  project: Project
   header?: ReactNode
   footer?: ReactNode
   /** Extra rows rendered after the estimates (e.g. an "add" button). */
@@ -20,7 +23,7 @@ interface Props {
 }
 
 /** Grouped list of estimates with swipe actions: export, duplicate, delete. */
-export function EstimateRows({ estimates, header, footer, children, onDelete, onDuplicate }: Props) {
+export function EstimateRows({ estimates, project, header, footer, children, onDelete, onDuplicate }: Props) {
   const navigate = useNavigate()
   const [openSwipe, setOpenSwipe] = useState<string | null>(null)
   const [toDelete, setToDelete] = useState<Estimate | null>(null)
@@ -44,9 +47,7 @@ export function EstimateRows({ estimates, header, footer, children, onDelete, on
             <Cell className="min-h-[52px] cursor-pointer">
               <div className="min-w-0 flex-1">
                 <div className="truncate font-semibold">{e.title || 'Без названия'}</div>
-                <div className="truncate text-[12px] text-label2">
-                  {formatShortDate(e.updatedAt)} · {e.rows.length} {plural(e.rows.length, 'позиция', 'позиции', 'позиций')}
-                </div>
+                <div className="truncate text-[12px] text-label2">Создана {formatDate(e.createdAt)}</div>
               </div>
               <div className="shrink-0 text-right text-[15px] tabular-nums">{formatMoney(estimateTotal(e), e.currency)}</div>
               <ChevronRight className="h-3 w-[7px] shrink-0 text-label3" />
@@ -56,7 +57,7 @@ export function EstimateRows({ estimates, header, footer, children, onDelete, on
         {children}
       </Group>
 
-      <ExportSheet estimate={toExport} onClose={() => setToExport(null)} />
+      <ExportSheet doc={toExport && estimateDoc(toExport, project)} onClose={() => setToExport(null)} />
 
       <ActionSheet
         open={toDelete !== null}

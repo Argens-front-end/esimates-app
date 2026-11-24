@@ -1,63 +1,60 @@
 import { useState } from 'react'
-import type { Estimate, EstimateRow } from '../lib/types'
+import type { EstimateRow } from '../lib/types'
 import { UNITS } from '../lib/types'
 import { currencySymbol, formatMoney, rowSum } from '../lib/money'
 import { newRow } from '../lib/storage'
-import { paths, useGoBack } from '../lib/router'
+import { useGoBack } from '../lib/router'
 import { NumberInput } from './NumberInput'
 import { BarButton, NavBar } from './ui/NavBar'
 import { Cell, Group } from './ui/Group'
 import { ArrowDown, ArrowUp } from './ui/icons'
 
 interface Props {
-  estimate: Estimate
+  rows: EstimateRow[]
+  currency: string
   /** `null` adds a new row. */
   rowId: string | null
-  onChange: (estimate: Estimate) => void
+  /** Where to go when closing if there is no in-app history. */
+  backPath: string
+  onChange: (rows: EstimateRow[]) => void
 }
 
 const fieldClass = 'w-full min-w-0 bg-transparent text-right text-[15px] tabular-nums outline-none'
 
-/** Full-screen page for adding or editing a single estimate row. */
-export function RowEditor({ estimate, rowId, onChange }: Props) {
+/** Full-screen page for adding or editing a single priced row (estimate row or invoice item). */
+export function RowEditor({ rows, currency, rowId, backPath, onChange }: Props) {
   const isNew = rowId === null
-  const existing = isNew ? undefined : estimate.rows.find((r) => r.id === rowId)
+  const existing = isNew ? undefined : rows.find((r) => r.id === rowId)
   const [draft, setDraft] = useState<EstimateRow>(() => existing ?? newRow())
   // Checked once so the form doesn't flash "not found" right after deleting the row.
   const [found] = useState(isNew || existing !== undefined)
   const set = (patch: Partial<EstimateRow>) => setDraft((d) => ({ ...d, ...patch }))
   const canSave = draft.name.trim().length > 0
   const isPresetUnit = (UNITS as readonly string[]).includes(draft.unit)
-  const currency = estimate.currency
-  const index = estimate.rows.findIndex((r) => r.id === draft.id)
+  const index = rows.findIndex((r) => r.id === draft.id)
   const canMoveUp = index > 0
-  const canMoveDown = index >= 0 && index < estimate.rows.length - 1
+  const canMoveDown = index >= 0 && index < rows.length - 1
 
   const goBack = useGoBack()
-  const close = () => goBack(paths.estimate(estimate.id))
+  const close = () => goBack(backPath)
 
   const save = () => {
     if (!canSave) return
     const row = { ...draft, name: draft.name.trim(), unit: draft.unit.trim() }
-    onChange({
-      ...estimate,
-      rows: estimate.rows.some((r) => r.id === row.id)
-        ? estimate.rows.map((r) => (r.id === row.id ? row : r))
-        : [...estimate.rows, row],
-    })
+    onChange(rows.some((r) => r.id === row.id) ? rows.map((r) => (r.id === row.id ? row : r)) : [...rows, row])
     close()
   }
 
   const move = (delta: -1 | 1) => {
-    const rows = estimate.rows.map((r) => (r.id === draft.id ? draft : r))
+    const next = rows.map((r) => (r.id === draft.id ? draft : r))
     const j = index + delta
-    if (index < 0 || j < 0 || j >= rows.length) return
-    ;[rows[index], rows[j]] = [rows[j], rows[index]]
-    onChange({ ...estimate, rows })
+    if (index < 0 || j < 0 || j >= next.length) return
+    ;[next[index], next[j]] = [next[j], next[index]]
+    onChange(next)
   }
 
   const remove = () => {
-    onChange({ ...estimate, rows: estimate.rows.filter((r) => r.id !== draft.id) })
+    onChange(rows.filter((r) => r.id !== draft.id))
     close()
   }
 

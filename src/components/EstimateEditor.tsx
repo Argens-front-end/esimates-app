@@ -4,7 +4,7 @@ import { CURRENCIES } from '../lib/types'
 import { currencyName, estimateTotal, formatMoney, formatNumber, plural, rowSum } from '../lib/money'
 import { useNavigate } from 'react-router'
 import { paths } from '../lib/router'
-import { type ExportFormat, exportEstimate } from '../lib/exportEstimate'
+import { type ExportFormat, estimateDoc, exportDoc } from '../lib/exportDoc'
 import { ExportSheet } from './ExportSheet'
 import { BarButton, NavBar } from './ui/NavBar'
 import { ActionSheet } from './ui/Sheet'
@@ -36,7 +36,7 @@ export function EstimateEditor({ estimate, projects, onChange, onDelete, onDupli
   const runExport = async (format: ExportFormat) => {
     setExporting(true)
     try {
-      await exportEstimate(estimate, format)
+      await exportDoc(estimateDoc(estimate, project), format)
     } finally {
       setExporting(false)
     }
@@ -175,7 +175,7 @@ export function EstimateEditor({ estimate, projects, onChange, onDelete, onDupli
       />
 
       <ExportSheet
-        estimate={exportOpen ? estimate : null}
+        doc={exportOpen ? estimateDoc(estimate, project) : null}
         onClose={() => setExportOpen(false)}
         onExport={(format) => void runExport(format)}
       />

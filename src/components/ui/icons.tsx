@@ -123,3 +123,10 @@ export const FolderPlus = (p: IconProps) => (
     <path d="M12 10v6M9 13h6" />
   </svg>
 )
+
+export const Receipt = (p: IconProps) => (
+  <svg viewBox="0 0 24 24" {...base({ strokeWidth: 1.8, ...p })}>
+    <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" />
+    <path d="M9 8h6M9 12h6M9 16h3" />
+  </svg>
+)

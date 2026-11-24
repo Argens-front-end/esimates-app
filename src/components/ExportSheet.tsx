@@ -1,26 +1,25 @@
-import type { Estimate } from '../lib/types'
-import { type ExportFormat, EXPORT_FORMATS, exportEstimate } from '../lib/exportEstimate'
+import { type ExportDoc, type ExportFormat, EXPORT_FORMATS, exportDoc } from '../lib/exportDoc'
 import { ActionSheet } from './ui/Sheet'
 
 interface Props {
-  estimate: Estimate | null
+  doc: ExportDoc | null
   onClose: () => void
   onExport?: (format: ExportFormat) => void
 }
 
 /** Format picker; uses `onExport` when given, otherwise exports directly. */
-export function ExportSheet({ estimate, onClose, onExport }: Props) {
+export function ExportSheet({ doc, onClose, onExport }: Props) {
   return (
     <ActionSheet
-      open={estimate !== null}
+      open={doc !== null}
       onClose={onClose}
-      title={`Экспорт «${estimate?.title || 'Без названия'}»`}
+      title={`Экспорт «${doc?.fileName ?? ''}»`}
       actions={EXPORT_FORMATS.map(({ format, label }) => ({
         label,
         onSelect: () => {
-          if (!estimate) return
+          if (!doc) return
           if (onExport) onExport(format)
-          else void exportEstimate(estimate, format)
+          else void exportDoc(doc, format)
         },
       }))}
     />

@@ -85,3 +85,51 @@
     color: var(--label3);
   }
 }
+
+/* ---------- Page transitions (View Transitions API, see src/lib/pageTransitions.ts) ---------- */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.35s;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* iOS push: the new screen slides over from the right while the old one shifts left and dims. */
+html[data-nav='forward']::view-transition-old(root) {
+  animation-name: vt-shift-out;
+}
+html[data-nav='forward']::view-transition-new(root) {
+  animation-name: vt-slide-in;
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.15);
+}
+
+/* iOS pop: the old screen slides away to the right on top of the returning one. */
+html[data-nav='back']::view-transition-old(root) {
+  z-index: 1;
+  animation-name: vt-slide-out;
+  box-shadow: -8px 0 24px rgb(0 0 0 / 0.15);
+}
+html[data-nav='back']::view-transition-new(root) {
+  animation-name: vt-shift-in;
+}
+
+@keyframes vt-slide-in {
+  from { transform: translateX(100%); }
+}
+@keyframes vt-slide-out {
+  to { transform: translateX(100%); }
+}
+@keyframes vt-shift-out {
+  to { transform: translateX(-30%); opacity: 0.6; }
+}
+@keyframes vt-shift-in {
+  from { transform: translateX(-30%); opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

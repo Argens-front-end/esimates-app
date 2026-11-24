@@ -1,7 +1,8 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { BackupData } from './backup'
-import type { Estimate, EstimateRow, Project } from './types'
+import type { Estimate, EstimateRow, Invoice, Project } from './types'
 import { DEFAULT_CURRENCY } from './types'
+import { upgradeInvoice } from './invoice'
 
 /**
  * Active storage backend. Switch to 'indexedDB' or 'localStorage' here.
@@ -14,11 +15,12 @@ type StorageBackendKind = 'indexedDB' | 'localStorage'
 interface Collections {
   estimates: Estimate
   projects: Project
+  invoices: Invoice
 }
 
 type CollectionName = keyof Collections
 
-const COLLECTIONS: CollectionName[] = ['estimates', 'projects']
+const COLLECTIONS: CollectionName[] = ['estimates', 'projects', 'invoices']
 
 interface StorageBackend {
   name: string
@@ -29,20 +31,29 @@ interface StorageBackend {
 }
 
 const DB_NAME = 'estimates'
-const DB_VERSION = 2
-const LOCAL_STORAGE_KEYS: Record<CollectionName, string> = { estimates: 'estimates.v1', projects: 'projects.v1' }
+const DB_VERSION = 3
+const LOCAL_STORAGE_KEYS: Record<CollectionName, string> = {
+  estimates: 'estimates.v1',
+  projects: 'projects.v1',
+  invoices: 'invoices.v1',
+}
 
 interface State {
   ready: boolean
   estimates: Estimate[]
   projects: Project[]
+  invoices: Invoice[]
   storageError: string | null
 }
 
-let state: State = { ready: false, estimates: [], projects: [], storageError: null }
+type Data = Pick<State, 'estimates' | 'projects' | 'invoices'>
+
+const EMPTY: Data = { estimates: [], projects: [], invoices: [] }
+
+let state: State = { ready: false, ...EMPTY, storageError: null }
 const listeners = new Set<() => void>()
 
-function setData(data: Partial<Pick<State, 'estimates' | 'projects'>>) {
+function setData(data: Partial<Data>) {
   state = { ...state, ...data, ready: true }
   listeners.forEach((l) => l())
 }
@@ -152,58 +163,74 @@ function persist(op: Promise<unknown>) {
 const FALLBACK_PROJECT_TITLE = 'Прочие сметы'
 
 /**
- * Every estimate must belong to a project. Older data has no `projectId` and imported estimates may point
- * to a missing project — such estimates are moved into the "Прочие сметы" project (created if needed).
+ * Every estimate and invoice must belong to a project. Older data has no `projectId` and imported records may
+ * point to a missing project — such records are moved into the "Прочие сметы" project (created if needed).
  * Returns the normalized data plus the records that changed and must be persisted.
  */
-function normalize(estimates: Estimate[], projects: Project[]) {
+function normalize({ estimates, projects, invoices }: Data) {
   const all = [...projects]
   const known = new Set(all.map((p) => p.id))
-  const orphans = estimates.filter((e) => !e.projectId || !known.has(e.projectId))
-  if (orphans.length === 0) return { estimates, projects: all, changedEstimates: [], changedProjects: [] }
+  const isOrphan = (r: { projectId: string }) => !r.projectId || !known.has(r.projectId)
+  const orphanEstimates = estimates.filter(isOrphan)
+  const orphanInvoices = invoices.filter(isOrphan)
+  const changedProjects: Project[] = []
+  if (orphanEstimates.length === 0 && orphanInvoices.length === 0) {
+    return { data: { estimates, projects: all, invoices }, changedEstimates: [], changedInvoices: [], changedProjects }
+  }
 
   const now = new Date().toISOString()
   let fallback = all.find((p) => p.title === FALLBACK_PROJECT_TITLE)
-  const changedProjects: Project[] = []
   if (!fallback) {
     fallback = { id: uid(), title: FALLBACK_PROJECT_TITLE, createdAt: now, updatedAt: now }
     all.push(fallback)
     changedProjects.push(fallback)
   }
-  const fallbackId = fallback.id
-  const moved = new Map(orphans.map((e) => [e.id, { ...e, projectId: fallbackId }]))
+  const projectId = fallback.id
+  const movedEstimates = new Map(orphanEstimates.map((e) => [e.id, { ...e, projectId }]))
+  const movedInvoices = new Map(orphanInvoices.map((i) => [i.id, { ...i, projectId }]))
   return {
-    estimates: estimates.map((e) => moved.get(e.id) ?? e),
-    projects: all,
-    changedEstimates: [...moved.values()],
+    data: {
+      estimates: estimates.map((e) => movedEstimates.get(e.id) ?? e),
+      projects: all,
+      invoices: invoices.map((i) => movedInvoices.get(i.id) ?? i),
+    },
+    changedEstimates: [...movedEstimates.values()],
+    changedInvoices: [...movedInvoices.values()],
     changedProjects,
   }
 }
 
 /** Applies normalized data to the state and persists the records `normalize` had to fix. */
-function applyNormalized(estimates: Estimate[], projects: Project[]) {
-  const n = normalize(estimates, projects)
-  setData({ estimates: n.estimates, projects: n.projects })
+function applyNormalized(data: Data) {
+  const n = normalize(data)
+  setData(n.data)
   if (n.changedProjects.length) persist(backend.putMany('projects', n.changedProjects))
   if (n.changedEstimates.length) persist(backend.putMany('estimates', n.changedEstimates))
-  return n
+  if (n.changedInvoices.length) persist(backend.putMany('invoices', n.changedInvoices))
 }
 
-async function loadAll(from: StorageBackend) {
-  const [estimates, projects] = await Promise.all([from.getAll('estimates'), from.getAll('projects')])
-  return { estimates, projects }
+async function loadAll(from: StorageBackend): Promise<Data> {
+  const [estimates, projects, invoices] = await Promise.all([
+    from.getAll('estimates'),
+    from.getAll('projects'),
+    from.getAll('invoices'),
+  ])
+  return { estimates, projects, invoices: invoices.map(upgradeInvoice) }
 }
+
+const isEmptyData = (d: Data) => d.estimates.length === 0 && d.projects.length === 0 && d.invoices.length === 0
 
 async function migrateFromOtherBackend() {
-  let other: Awaited<ReturnType<typeof loadAll>>
+  let other: Data
   try {
     other = await loadAll(otherBackend)
   } catch {
     return null
   }
-  if (other.estimates.length === 0 && other.projects.length === 0) return null
+  if (isEmptyData(other)) return null
   await backend.putMany('estimates', other.estimates)
   await backend.putMany('projects', other.projects)
+  await backend.putMany('invoices', other.invoices)
   await Promise.all(COLLECTIONS.map((c) => otherBackend.clear(c))).catch(() => undefined)
   return other
 }
@@ -212,8 +239,7 @@ const loadErrorMessage = (e: unknown) => `Не удалось загрузить
 
 async function reload() {
   try {
-    const { estimates, projects } = await loadAll(backend)
-    applyNormalized(estimates, projects)
+    applyNormalized(await loadAll(backend))
   } catch (e) {
     setStorageError(loadErrorMessage(e))
   }
@@ -225,12 +251,12 @@ function ensureLoaded() {
   loading ??= (async () => {
     try {
       let all = await loadAll(backend)
-      if (all.estimates.length === 0 && all.projects.length === 0) all = (await migrateFromOtherBackend()) ?? all
-      applyNormalized(all.estimates, all.projects)
+      if (isEmptyData(all)) all = (await migrateFromOtherBackend()) ?? all
+      applyNormalized(all)
       // Ask the browser not to evict our data under storage pressure.
       void navigator.storage?.persist?.()
     } catch (e) {
-      setData({ estimates: [], projects: [] })
+      setData(EMPTY)
       setStorageError(loadErrorMessage(e))
     }
   })()
@@ -252,6 +278,20 @@ export const uid = () =>
     : Math.random().toString(36).slice(2) + Date.now().toString(36)
 
 export const newRow = (): EstimateRow => ({ id: uid(), name: '', unit: 'шт', quantity: 1, price: 0 })
+
+/** Next free numeric invoice number within a project ("1", "2", …). */
+function nextInvoiceNumber(projectId: string) {
+  const used = state.invoices.filter((i) => i.projectId === projectId).map((i) => Number.parseInt(i.number, 10) || 0)
+  return String(Math.max(0, ...used) + 1)
+}
+
+/** Currency of the project's most recently edited estimate, so item lines match the linked estimates. */
+function projectCurrency(projectId: string) {
+  const latest = state.estimates
+    .filter((e) => e.projectId === projectId)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+  return latest?.currency ?? DEFAULT_CURRENCY
+}
 
 export interface ImportResult {
   added: number
@@ -278,7 +318,7 @@ function mergeById<T extends { id: string; updatedAt: string }>(current: T[], in
 }
 
 export function useEstimates() {
-  const { ready, estimates, projects, storageError } = useSyncExternalStore(subscribe, getSnapshot)
+  const { ready, estimates, projects, invoices, storageError } = useSyncExternalStore(subscribe, getSnapshot)
 
   const create = useCallback((projectId: string, currency: string = DEFAULT_CURRENCY): Estimate => {
     const now = new Date().toISOString()
@@ -330,29 +370,67 @@ export function useEstimates() {
     persist(backend.putMany('projects', [updated]))
   }, [])
 
-  /** Removes a project together with all of its estimates. */
+  /** Removes a project together with all of its estimates and invoices. */
   const removeProject = useCallback((id: string) => {
     const estimateIds = state.estimates.filter((e) => e.projectId === id).map((e) => e.id)
+    const invoiceIds = state.invoices.filter((i) => i.projectId === id).map((i) => i.id)
     setData({
       projects: state.projects.filter((p) => p.id !== id),
       estimates: state.estimates.filter((e) => e.projectId !== id),
+      invoices: state.invoices.filter((i) => i.projectId !== id),
     })
-    persist(Promise.all([backend.delete('projects', [id]), backend.delete('estimates', estimateIds)]))
+    persist(
+      Promise.all([
+        backend.delete('projects', [id]),
+        backend.delete('estimates', estimateIds),
+        backend.delete('invoices', invoiceIds),
+      ]),
+    )
+  }, [])
+
+  const createInvoice = useCallback((projectId: string): Invoice => {
+    const now = new Date().toISOString()
+    const invoice: Invoice = {
+      id: uid(),
+      projectId,
+      title: '',
+      number: nextInvoiceNumber(projectId),
+      currency: projectCurrency(projectId),
+      lines: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    setData({ invoices: [invoice, ...state.invoices] })
+    persist(backend.putMany('invoices', [invoice]))
+    return invoice
+  }, [])
+
+  const updateInvoice = useCallback((invoice: Invoice) => {
+    const updated = { ...invoice, updatedAt: new Date().toISOString() }
+    setData({ invoices: state.invoices.map((i) => (i.id === invoice.id ? updated : i)) })
+    persist(backend.putMany('invoices', [updated]))
+  }, [])
+
+  const removeInvoice = useCallback((id: string) => {
+    setData({ invoices: state.invoices.filter((i) => i.id !== id) })
+    persist(backend.delete('invoices', [id]))
   }, [])
 
   const importMany = useCallback((incoming: BackupData): ImportResult => {
     const result: ImportResult = { added: 0, updated: 0, skipped: 0 }
     const projectsMerge = mergeById(state.projects, incoming.projects, { added: 0, updated: 0, skipped: 0 })
     const estimatesMerge = mergeById(state.estimates, incoming.estimates, result)
+    const invoicesMerge = mergeById(state.invoices, incoming.invoices, result)
     // Persist merged records before normalization so orphan fixes (saved by applyNormalized) win.
     if (projectsMerge.changed.length) persist(backend.putMany('projects', projectsMerge.changed))
     if (estimatesMerge.changed.length) persist(backend.putMany('estimates', estimatesMerge.changed))
-    applyNormalized(estimatesMerge.all, projectsMerge.all)
+    if (invoicesMerge.changed.length) persist(backend.putMany('invoices', invoicesMerge.changed))
+    applyNormalized({ estimates: estimatesMerge.all, projects: projectsMerge.all, invoices: invoicesMerge.all })
     return result
   }, [])
 
   const clearAll = useCallback(() => {
-    setData({ estimates: [], projects: [] })
+    setData(EMPTY)
     persist(Promise.all(COLLECTIONS.map((c) => backend.clear(c))))
   }, [])
 
@@ -362,6 +440,7 @@ export function useEstimates() {
     ready,
     estimates,
     projects,
+    invoices,
     storageError,
     clearStorageError,
     create,
@@ -372,6 +451,9 @@ export function useEstimates() {
     createProject,
     updateProject,
     removeProject,
+    createInvoice,
+    updateInvoice,
+    removeInvoice,
     clearAll,
   }
 }

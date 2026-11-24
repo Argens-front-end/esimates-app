@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
-import type { Estimate, Project } from '../lib/types'
-import { formatTotals, plural } from '../lib/money'
+import type { Estimate, Invoice, Project } from '../lib/types'
+import { formatDate, plural } from '../lib/money'
 import { useNavigate } from 'react-router'
 import { paths } from '../lib/router'
 import { type BackupData, exportBackup, readBackup } from '../lib/backup'
@@ -17,6 +17,7 @@ import { ProjectDeleteSheet } from './ProjectDeleteSheet'
 interface Props {
   projects: Project[]
   estimates: Estimate[]
+  invoices: Invoice[]
   onCreateProject: () => void
   onDeleteProject: (id: string) => void
   onImport: (data: BackupData) => ImportResult
@@ -28,6 +29,7 @@ const byUpdated = (a: { updatedAt: string }, b: { updatedAt: string }) => b.upda
 export function EstimateList({
   projects,
   estimates,
+  invoices,
   onCreateProject,
   onDeleteProject,
   onImport,
@@ -61,14 +63,16 @@ export function EstimateList({
   }
 
   const exportAll = async () => {
-    await exportBackup({ projects, estimates })
+    await exportBackup({ projects, estimates, invoices })
   }
 
   const q = query.trim().toLowerCase()
   const matches = (e: Estimate) => e.title.toLowerCase().includes(q) || e.rows.some((r) => r.name.toLowerCase().includes(q))
   const estimatesOf = (projectId: string) => estimates.filter((e) => e.projectId === projectId)
+  const invoicesOf = (projectId: string) => invoices.filter((i) => i.projectId === projectId)
+  const invoiceMatches = (i: Invoice) => i.title.toLowerCase().includes(q) || i.number.toLowerCase().includes(q)
   const filteredProjects = projects
-    .filter((p) => !q || p.title.toLowerCase().includes(q) || estimatesOf(p.id).some(matches))
+    .filter((p) => !q || p.title.toLowerCase().includes(q) || estimatesOf(p.id).some(matches) || invoicesOf(p.id).some(invoiceMatches))
     .sort(byUpdated)
   const isEmpty = projects.length === 0
 
@@ -128,33 +132,27 @@ export function EstimateList({
       ) : filteredProjects.length === 0 ? (
         <p className="pt-16 text-center text-label2">Ничего не найдено</p>
       ) : (
-        <Group footer="Смахните объект влево, чтобы удалить его вместе со сметами.">
-          {filteredProjects.map((p) => {
-            const list = estimatesOf(p.id)
-            return (
-              <SwipeRow
-                key={p.id}
-                open={openSwipe === p.id}
-                onOpenChange={(open) => setOpenSwipe(open ? p.id : null)}
-                onClick={() => navigate(paths.project(p.id))}
-                actions={[
-                  { label: 'Удалить', icon: <Trash className="size-4" />, className: 'bg-red', onSelect: () => setProjectToDelete(p) },
-                ]}
-              >
-                <Cell className="min-h-[52px] cursor-pointer">
-                  <Folder className="size-[22px] shrink-0 text-tint" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-semibold">{p.title || 'Без названия'}</div>
-                    <div className="truncate text-[12px] text-label2">
-                      {list.length} {plural(list.length, 'смета', 'сметы', 'смет')}
-                    </div>
-                  </div>
-                  {list.length > 0 && <div className="shrink-0 text-right text-[15px] tabular-nums">{formatTotals(list)}</div>}
-                  <ChevronRight className="h-3 w-[7px] shrink-0 text-label3" />
-                </Cell>
-              </SwipeRow>
-            )
-          })}
+        <Group footer="Смахните объект влево, чтобы удалить его вместе со сметами и инвойсами.">
+          {filteredProjects.map((p) => (
+            <SwipeRow
+              key={p.id}
+              open={openSwipe === p.id}
+              onOpenChange={(open) => setOpenSwipe(open ? p.id : null)}
+              onClick={() => navigate(paths.project(p.id))}
+              actions={[
+                { label: 'Удалить', icon: <Trash className="size-4" />, className: 'bg-red', onSelect: () => setProjectToDelete(p) },
+              ]}
+            >
+              <Cell className="min-h-[52px] cursor-pointer">
+                <Folder className="size-[22px] shrink-0 text-tint" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-semibold">{p.title || 'Без названия'}</div>
+                  <div className="truncate text-[12px] text-label2">Создан {formatDate(p.createdAt)}</div>
+                </div>
+                <ChevronRight className="h-3 w-[7px] shrink-0 text-label3" />
+              </Cell>
+            </SwipeRow>
+          ))}
         </Group>
       )}
 
@@ -162,8 +160,7 @@ export function EstimateList({
         <BottomBar>
           <div className="w-10" />
           <div className="flex-1 text-center text-[10px] text-label2">
-            {projects.length} {plural(projects.length, 'объект', 'объекта', 'объектов')} · {estimates.length}{' '}
-            {plural(estimates.length, 'смета', 'сметы', 'смет')}
+            {projects.length} {plural(projects.length, 'объект', 'объекта', 'объектов')}
           </div>
           <button
             type="button"
@@ -193,7 +190,7 @@ export function EstimateList({
         title="Резервная копия"
         message="Сметы хранятся только в этом браузере. Сохраните копию в файл, чтобы перенести их на другое устройство или не потерять при очистке браузера."
         actions={[
-          ...(!isEmpty ? [{ label: `Сохранить копию (${estimates.length})`, onSelect: () => void exportAll() }] : []),
+          ...(!isEmpty ? [{ label: 'Сохранить копию', onSelect: () => void exportAll() }] : []),
           { label: 'Восстановить из файла', onSelect: () => fileInput.current?.click() },
           ...(!isEmpty ? [{ label: 'Удалить все данные', destructive: true, onSelect: () => setConfirmClear(true) }] : []),
         ]}
@@ -203,7 +200,7 @@ export function EstimateList({
         open={confirmClear}
         onClose={() => setConfirmClear(false)}
         title="Удалить все данные?"
-        message={`Все объекты (${projects.length}) и сметы (${estimates.length}) будут удалены из этого браузера без возможности восстановления. Если данные могут понадобиться, сначала сохраните резервную копию.`}
+        message={`Все объекты (${projects.length}), сметы (${estimates.length}) и инвойсы (${invoices.length}) будут удалены из этого браузера без возможности восстановления. Если данные могут понадобиться, сначала сохраните резервную копию.`}
         actions={[
           { label: 'Сохранить копию', onSelect: () => void exportAll() },
           {
@@ -223,6 +220,7 @@ export function EstimateList({
       <ProjectDeleteSheet
         project={projectToDelete}
         estimateCount={projectToDelete ? estimatesOf(projectToDelete.id).length : 0}
+        invoiceCount={projectToDelete ? invoicesOf(projectToDelete.id).length : 0}
         onClose={() => setProjectToDelete(null)}
         onDelete={onDeleteProject}
       />

@@ -2,7 +2,7 @@ import type { Estimate, EstimateRow } from './types'
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 
-export const rowSum = (row: EstimateRow) => round2(row.quantity * row.price)
+export const rowSum = (row: Pick<EstimateRow, 'quantity' | 'price'>) => round2(row.quantity * row.price)
 
 export const estimateTotal = (estimate: Estimate) =>
   round2(estimate.rows.reduce((acc, row) => acc + rowSum(row), 0))
@@ -58,9 +58,33 @@ export function formatShortDate(iso: string) {
   })
 }
 
-/** Sum of several estimates, grouped by currency (e.g. "1 200,00 $ + 300,00 €"). */
+/** Amounts grouped by currency. */
+export type Totals = Map<string, number>
+
+export function addToTotals(totals: Totals, currency: string, amount: number) {
+  totals.set(currency, round2((totals.get(currency) ?? 0) + amount))
+  return totals
+}
+
+/** Formats totals like "1 200,00 $ + 300,00 €"; `fallbackCurrency` is used to show zero when empty. */
+export function formatTotalsMap(totals: Totals, fallbackCurrency?: string) {
+  if (totals.size === 0) return fallbackCurrency ? formatMoney(0, fallbackCurrency) : ''
+  return [...totals].map(([currency, sum]) => formatMoney(sum, currency)).join(' + ')
+}
+
+/** Sum of several estimates, grouped by currency. */
 export function formatTotals(estimates: Estimate[]) {
-  const byCurrency = new Map<string, number>()
-  for (const e of estimates) byCurrency.set(e.currency, round2((byCurrency.get(e.currency) ?? 0) + estimateTotal(e)))
-  return [...byCurrency].map(([currency, sum]) => formatMoney(sum, currency)).join(' + ')
+  const totals: Totals = new Map()
+  for (const e of estimates) addToTotals(totals, e.currency, estimateTotal(e))
+  return formatTotalsMap(totals)
+}
+
+/** Calendar date without time, e.g. "24 нояб." (year added when it differs from the current one). */
+export function formatDate(iso: string) {
+  const d = new Date(iso)
+  return d.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  })
 }
